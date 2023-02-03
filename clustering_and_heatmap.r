@@ -266,3 +266,219 @@ for (clusterN in c(12)){
 } 
 
 
+#============================================================================
+# 2022-09-01
+# Clutering by using ELF3 dependent genes (elf3SD vs WTSD) and marked the ELF3 bound genes
+# define up-regulated gene in elf3 mutant vs WT
+
+mycolnames <- c("elf3_ZT00_LD_193R_week3","elf3_ZT00_SD_144R_week3",
+                "elf3_ZT04_LD_193R_week3","elf3_ZT04_SD_144R_week3",
+                "elf3_ZT08_LD_193R_week3","elf3_ZT08_SD_144R_week3",
+                "elf3_ZT12_LD_193R_week3","elf3_ZT12_SD_144R_week3",
+                "elf3_ZT16_LD_193R_week3","elf3_ZT16_SD_144R_week3",
+                "elf3_ZT20_LD_193R_week3","elf3_ZT20_SD_144R_week3",
+                "elf3_ZT22_LD_193R_week3","WT_ZT00_LD_193R_week3",
+                "WT_ZT00_SD_144R_week3","WT_ZT04_LD_193R_week3",
+                "WT_ZT04_SD_144R_week3","WT_ZT08_LD_193R_week3",
+                "WT_ZT08_SD_144R_week3","WT_ZT12_LD_193R_week3",
+                "WT_ZT12_SD_144R_week3","WT_ZT16_LD_193R_week3",
+                "WT_ZT16_SD_144R_week3","WT_ZT20_LD_193R_week3",
+                "WT_ZT20_SD_144R_week3","WT_ZT22_LD_193R_week3")
+
+setwd("C:/project-Brachypodium/clustering")
+
+tpmAll <- read.table("TPM_all.txt",
+                     header = T,
+                     row.names = 1,
+                     sep = "\t")
+colnames(tpmAll)
+wk3 <- tpmAll[,mycolnames]
+
+wk3_SD_wt_elf3 <- wk3[,mycolnames[grep("SD",mycolnames)]]
+
+wk3_SD_wt_elf3 <- log2(wk3_SD_wt_elf3 + 1)
+wk3_SD_wt_elf3 <- wk3_SD_wt_elf3[apply(wk3_SD_wt_elf3,1,max)>2, ]
+
+wk3_elf3SD_vs_WTSD <- data.frame(
+  wk3.elf3_SDvsWT_SD_ZT00 = wk3_SD_wt_elf3$elf3_ZT00_SD - wk3_SD_wt_elf3$WT_ZT00_SD,
+  wk3.elf3_SDvsWT_SD_ZT04 = wk3_SD_wt_elf3$elf3_ZT04_SD - wk3_SD_wt_elf3$WT_ZT04_SD,
+  wk3.elf3_SDvsWT_SD_ZT08 = wk3_SD_wt_elf3$elf3_ZT08_SD - wk3_SD_wt_elf3$WT_ZT08_SD,
+  wk3.elf3_SDvsWT_SD_ZT12 = wk3_SD_wt_elf3$elf3_ZT12_SD - wk3_SD_wt_elf3$WT_ZT12_SD,
+  wk3.elf3_SDvsWT_SD_ZT16 = wk3_SD_wt_elf3$elf3_ZT16_SD - wk3_SD_wt_elf3$WT_ZT16_SD,
+  wk3.elf3_SDvsWT_SD_ZT20 = wk3_SD_wt_elf3$elf3_ZT20_SD - wk3_SD_wt_elf3$WT_ZT20_SD)
+rownames(wk3_elf3SD_vs_WTSD) <- rownames(wk3_SD_wt_elf3)
+
+# select ELF3 dependent genes by setting cutoff
+library(ClustVarLV)
+library(ClusterR)
+library(pheatmap)
+library(grid)
+library(amap)
+library(RColorBrewer)
+
+ELF3_dependent_SD <- as.data.frame(
+  matrix(
+    nrow = length(rownames(wk3_elf3SD_vs_WTSD)),
+    ncol = length(colnames(wk3_elf3SD_vs_WTSD))
+  )
+)
+
+for(i in 1:length(rownames(wk3_elf3SD_vs_WTSD))){
+  if(sort(as.matrix(wk3_elf3SD_vs_WTSD[i,]), decreasing = T)[2] > 1){
+    ELF3_dependent_SD[i,] <- wk3_elf3SD_vs_WTSD[i,]
+  }
+}
+rownames(ELF3_dependent_SD) <- rownames(wk3_elf3SD_vs_WTSD)
+colnames(ELF3_dependent_SD) <- colnames(wk3_elf3SD_vs_WTSD)
+ELF3_dependent_SD <- na.omit(ELF3_dependent_SD)
+
+dim(ELF3_dependent_SD)
+
+write.table(ELF3_dependent_SD,
+            file = paste("ELF3_dependent_genes_week3_elf3SD_vs_WTSD.xls",sep = ""),
+            row.names = T, col.names = T, quote = FALSE, sep = '\t')
+
+ELF3_dependent_SD[ELF3_dependent_SD > 2] <- 2
+ELF3_dependent_SD[ELF3_dependent_SD < -2] <- -2
+data_SD <- ELF3_dependent_SD
+
+data.list <- list(SD = data_SD)
+
+for (photoperiod in c("SD")){
+  data <- data.list[[photoperiod]]
+  
+  for (clusterN in c(6)){
+    gmm <- GMM(data,
+               gaussian_comps = clusterN,
+               dist_mode = "eucl_dist",
+               seed_mode = "static_spread",
+               km_iter = 30,
+               em_iter = 30,
+               verbose = F)
+    pr <- predict_GMM(data,
+                      gmm$centroids,
+                      gmm$covariance_matrices,
+                      gmm$weights)
+    names(pr$cluster_labels) <- rownames(data)
+    clustersTree <- sort(pr$cluster_labels)
+    gaps <- which((clustersTree[-1] - clustersTree[-length(clustersTree)]) != 0)
+
+    gene.cluster <- as.data.frame(clustersTree)
+    df.cluster <- cbind(gene.cluster,data[rownames(gene.cluster),])
+    data_clusters <- cbind(gene.cluster,data[rownames(gene.cluster),])
+    write.table(data_clusters,
+                file = paste("ELF3_dependent_genes_week3.elf3",photoperiod,"_vs_WT",photoperiod,".cluster",clusterN,".gmm.plotOrder.xls",sep = ""),
+                row.names = T, col.names = T, quote = FALSE, sep = '\t')
+    my_gene_clusters <- data.frame(cluster = df.cluster[,1])
+    rownames(my_gene_clusters) <- rownames(df.cluster)
+    colorsVec <- c(brewer.pal(12, "Set3"),
+                   brewer.pal(8, "Accent"))
+    names(colorsVec) <- c(1:clusterN)
+    my_colors <- list(cluster = colorsVec)
+    
+    if(stringr::str_detect(colnames(data_clusters[,-1]), "LD")[1]){
+      my_gaps_col <- c(7)
+      my_labels_col <- c(rep(c("ZT0","ZT4","ZT8","ZT12",
+                               "ZT16","ZT20","ZT22"),1))
+    } else if(stringr::str_detect(colnames(data_clusters[,-1]), "SD")[1]){
+      my_gaps_col <- c(6)
+      my_labels_col <- c(rep(c("ZT0","ZT4","ZT8","ZT12",
+                               "ZT16","ZT20"),1))
+    }
+    pdf(paste("ELF3_dependent_genes_week3.elf3",photoperiod,"_vs_WT",photoperiod,".cluster",clusterN,".gmm.pdf",sep = ""), height = 11, width = 3)
+    phm <- pheatmap(df.cluster[,-1],
+                    # df.cluster.allsamples[,-1],
+                    color = colorRampPalette(c("#c1207e","snow","#669900"))(200),
+                    border_color = "snow",
+                    cluster_rows = F,
+                    cluster_cols = F,                
+                    treeheight_row = 30, 
+                    treeheight_col = 30,
+                    fontsize_col = 8,
+                    fontsize_row = 10,
+                    cutree_rows = 12,
+                    angle_col = 90,
+                    gaps_row = gaps,
+                    gaps_col = my_gaps_col,
+                    annotation_colors = my_colors,
+                    annotation_row = my_gene_clusters,
+                    annotation_legend = T,
+                    labels_col = my_labels_col,
+                    annotation_names_row = T,                  
+                    annotation_names_col = T,
+                    show_rownames = F,
+                    display_numbers = F,
+                    drop_levels = T
+    )
+    dev.off()
+  }
+}
+
+# mark out ELF3 bound genes
+ELF3BoundGenes <- read.table("C:/project-Brachypodium/macs2Output/ELF3_OX_ZT20_SD_rep2.targetGenes.bed", header = F, sep = "\t")
+rownames(ELF3BoundGenes) <- ELF3BoundGenes$V4
+
+head(ELF3BoundGenes)
+head(df.cluster)
+
+colorsVec <- brewer.pal(8, "Set3")
+names(colorsVec) <- c(1:8)
+my_colors <- list(cluster = colorsVec)
+
+df.cluster$ELF3_bound[rownames(df.cluster) %in% rownames(ELF3BoundGenes)] <- 1
+df.cluster$ELF3_bound[!(rownames(df.cluster) %in% rownames(ELF3BoundGenes))] <- 0
+
+
+write.table(df.cluster,
+            file = paste("ELF3_dependent_genes.elf3SD_vs_WTSD.cluster6.gmm.plotOrder.ELF3_bound.xls",sep = ""),
+            row.names = T, col.names = T, quote = FALSE, sep = '\t')
+
+df.cluster.sort <- df.cluster[order(df.cluster$clustersTree,df.cluster$ELF3_bound,decreasing = c(F,F)),]
+
+write.table(df.cluster.sort,
+            file = paste("ELF3_dependent_genes.elf3SD_vs_WTSD.cluster8.gmm.plotOrder.sorted_by_ELF3_bound.xls",sep = ""),
+            row.names = T, col.names = T, quote = FALSE, sep = '\t')
+
+my_gaps_col <- c(1,4)
+
+my_gene_clusters <- data.frame(cluster = df.cluster.sort[,1],
+                               bound = df.cluster.sort[,8])
+rownames(my_gene_clusters) <- rownames(df.cluster.sort)
+
+clusterColors <- c(rep(c(brewer.pal(12, "Set3")[9]),8))
+names(clusterColors) <- c(1:clusterN)
+# boundColors <- c("grey60","indianred2")
+boundColors <- c(brewer.pal(12, "Set3")[c(9,4)])
+names(boundColors) <- c(0,1)
+my_colors <- list(cluster = clusterColors,
+                  bound = boundColors)
+
+pdf(paste("ELF3_dependent_genes.elf3SD_vs_WTSD.cluster8.gmm.plotOrder.ELF3_bound",clusterN,".gmm.pdf",sep = ""),
+    height = 8,
+    width = 3)
+phm <- pheatmap(df.cluster.sort[,c(2:7)],
+                color = colorRampPalette(c("#c1207e","snow","#669900"))(200),
+                border_color = "snow",
+                # scale = "row",
+                cluster_rows = F,
+                cluster_cols = F,                
+                treeheight_row = 30, 
+                treeheight_col = 30,
+                fontsize_col = 8,
+                fontsize_row = 10,
+                cutree_rows = 12,
+                angle_col = 90,
+                gaps_row = gaps,
+                gaps_col = my_gaps_col,
+                annotation_colors = my_colors,
+                annotation_row = my_gene_clusters,
+                annotation_legend = T,
+                labels_col = gsub("wk3.elf3_SDvsWT_SD_","",colnames(df.cluster.sort[,c(2:7)])),
+                main = paste("n = ",length(rownames(df.cluster.sort)), sep = ""),
+                annotation_names_row = T,                  
+                annotation_names_col = T,
+                show_rownames = F,
+                display_numbers = F,
+                drop_levels = T
+)
+dev.off()
